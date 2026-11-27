@@ -403,6 +403,11 @@ export const ADMIN_ROUTES: AdminRoute[] = [
                 link: "/administrators/students/documents",
                 icon: <IconFileDescription className="size-4" />,
             },
+            {
+                title: "Duplicates",
+                link: "/administrators/students/duplicates",
+                icon: <IconUser className="size-4" />,
+            },
         ],
         allowedRoles: [
             ...SYSTEM_ADMIN_ROLES,

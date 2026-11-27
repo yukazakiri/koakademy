@@ -91,7 +91,10 @@ interface DataTableProps<TData extends Student, TValue> {
     returnUrl?: string;
     bulkActions?: {
         statusOptions?: { value: string; label: string }[];
+        yearLevelOptions?: { value: string; label: string }[];
     };
+    isTrashedView?: boolean;
+    onRowClick?: (student: Student) => void;
     onSoftDelete?: (student: Student) => void;
     onForceDelete?: (student: Student) => void;
     onRestore?: (student: Student) => void;
@@ -206,6 +209,8 @@ export function DataTable<TData extends Student, TValue>({
     viewMode = "list",
     returnUrl,
     bulkActions,
+    isTrashedView = false,
+    onRowClick,
     onSoftDelete,
     onForceDelete,
     onRestore,
@@ -454,6 +459,63 @@ export function DataTable<TData extends Student, TValue>({
         );
     };
 
+    const handleBulkRestore = () => {
+        if (!hasSelection || isSubmitting) return;
+        setIsSubmitting(true);
+        router.post(
+            route("administrators.students.bulk-restore"),
+            { student_ids: selectedIds },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    toast.success(`Restored ${selectedCount} student(s).`);
+                    resetSelection();
+                },
+                onError: () => toast.error("Failed to restore selected students."),
+                onFinish: () => setIsSubmitting(false),
+            },
+        );
+    };
+
+    const handleBulkPromote = (targetYearLevel?: number) => {
+        if (!hasSelection || isSubmitting) return;
+        setIsSubmitting(true);
+        router.patch(
+            route("administrators.students.bulk-promote"),
+            {
+                student_ids: selectedIds,
+                ...(targetYearLevel !== undefined ? { target_year_level: targetYearLevel } : {}),
+            },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    toast.success(`Updated academic level for ${selectedCount} student(s).`);
+                    resetSelection();
+                },
+                onError: () => toast.error("Failed to promote selected students."),
+                onFinish: () => setIsSubmitting(false),
+            },
+        );
+    };
+
+    const handleBulkRemindDocs = () => {
+        if (!hasSelection || isSubmitting) return;
+        setIsSubmitting(true);
+        router.post(
+            route("administrators.students.documents.bulk-remind"),
+            { student_ids: selectedIds },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    toast.success(`Missing-document reminders queued for ${selectedCount} student(s).`);
+                    resetSelection();
+                },
+                onError: () => toast.error("Failed to send document reminders."),
+                onFinish: () => setIsSubmitting(false),
+            },
+        );
+    };
+
     const handleRowSoftDelete = (student: Student) => {
         if (onSoftDelete) {
             onSoftDelete(student);
@@ -545,6 +607,56 @@ export function DataTable<TData extends Student, TValue>({
                                 </DropdownMenuItem>
                             </DropdownMenuContent>
                         </DropdownMenu>
+
+                        {isTrashedView && (
+                            <Button
+                                variant="default"
+                                size="sm"
+                                className="h-8 gap-1.5 text-xs"
+                                disabled={isSubmitting}
+                                onClick={handleBulkRestore}
+                            >
+                                <RotateCcw className="size-3.5" />
+                                Restore Selected
+                            </Button>
+                        )}
+
+                        {!isTrashedView && bulkActions?.yearLevelOptions?.length ? (
+                            <DropdownMenu>
+                                <DropdownMenuTrigger
+                                    render={
+                                        <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" disabled={isSubmitting}>
+                                            <GraduationCap className="size-3.5" />
+                                            Promote / Level
+                                        </Button>
+                                    }
+                                />
+                                <DropdownMenuContent align="end" className="w-52">
+                                    <DropdownMenuLabel className="text-xs">Academic Level</DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem onClick={() => handleBulkPromote()}>
+                                        Advance to Next Level (+1)
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    {bulkActions.yearLevelOptions.map((opt) => (
+                                        <DropdownMenuItem key={opt.value} onClick={() => handleBulkPromote(Number(opt.value))}>
+                                            Set to {opt.label}
+                                        </DropdownMenuItem>
+                                    ))}
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        ) : null}
+
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 gap-1.5 text-xs"
+                            disabled={isSubmitting}
+                            onClick={handleBulkRemindDocs}
+                        >
+                            <FileText className="size-3.5" />
+                            Remind Docs
+                        </Button>
 
                         <Button
                             variant="outline"
@@ -818,7 +930,8 @@ export function DataTable<TData extends Student, TValue>({
                                     <TableRow
                                         key={row.id}
                                         data-state={row.getIsSelected() && "selected"}
-                                        className="hover:bg-muted/30 transition-colors"
+                                        onClick={() => onRowClick?.(row.original)}
+                                        className={`hover:bg-muted/30 transition-colors ${onRowClick ? "cursor-pointer" : ""}`}
                                     >
                                         {row.getVisibleCells().map((cell) => (
                                             <TableCell key={cell.id} className="py-2.5 text-xs">
@@ -911,17 +1024,11 @@ export function DataTable<TData extends Student, TValue>({
                                                     <DropdownMenuItem render={<AdminLink href={route("administrators.students.edit", student.id)} />}>
                                                         <UserCheck className="mr-2 size-4" /> Edit Profile
                                                     </DropdownMenuItem>
-                                                    {student.filament?.view_url && (
-                                                        <>
-                                                            <DropdownMenuSeparator />
-                                                            <DropdownMenuItem
-                                                                render={<a href={student.filament.view_url} target="_blank" rel="noreferrer" />}
-                                                                className="opacity-80"
-                                                            >
-                                                                <FileText className="mr-2 size-4" /> View in Filament
-                                                            </DropdownMenuItem>
-                                                        </>
-                                                    )}
+                                                    <DropdownMenuItem
+                                                        render={<AdminLink href={route("administrators.students.documents.index", student.id)} />}
+                                                    >
+                                                        <FileText className="mr-2 size-4" /> Manage Documents
+                                                    </DropdownMenuItem>
                                                     <DropdownMenuSeparator />
                                                     {student.deleted_at ? (
                                                         <DropdownMenuItem onClick={() => handleRowRestore(student)}>

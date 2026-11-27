@@ -10,24 +10,35 @@ import {
     ArrowLeft,
     CheckCircle2,
     CircleAlert,
+    Clock3,
     Download,
     Eye,
     FileCheck2,
     FileText,
+    FolderCheck,
     Loader2,
     ShieldCheck,
     Upload,
+    XCircle,
 } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
+
+type StudentDocumentStatus = "verified" | "physical_on_file" | "waived" | "pending_review" | "rejected" | "missing" | "on_file";
 
 interface StudentDocumentSlot {
     key: string;
     label: string;
     description: string;
     accepted: string;
-    status: "on_file" | "missing";
+    required?: boolean;
+    status: StudentDocumentStatus;
+    is_compliant?: boolean;
+    has_file?: boolean;
     file_name: string | null;
+    rejection_reason?: string | null;
+    waiver_reason?: string | null;
+    verified_at_label?: string | null;
     download_url: string | null;
     preview_url: string | null;
 }
@@ -43,11 +54,70 @@ interface StudentDocumentsPageProps {
     documents: StudentDocumentSlot[];
     summary: {
         uploaded: number;
+        compliant?: number;
         total: number;
+        pending_review?: number;
+        rejected?: number;
     };
 }
 
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+
+function statusPresentation(slot: StudentDocumentSlot): {
+    label: string;
+    badgeClass: string;
+    iconBgClass: string;
+    cardBorderClass: string;
+} {
+    switch (slot.status) {
+        case "verified":
+        case "on_file":
+            return {
+                label: "Verified",
+                badgeClass: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+                iconBgClass: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+                cardBorderClass: "border-emerald-500/25",
+            };
+        case "physical_on_file":
+            return {
+                label: "Physical Copy on File",
+                badgeClass: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+                iconBgClass: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+                cardBorderClass: "border-emerald-500/25",
+            };
+        case "waived":
+            return {
+                label: "Waived",
+                badgeClass: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
+                iconBgClass: "bg-sky-500/15 text-sky-700 dark:text-sky-300",
+                cardBorderClass: "border-sky-500/25",
+            };
+        case "pending_review":
+            return {
+                label: "Pending Review",
+                badgeClass: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+                iconBgClass: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+                cardBorderClass: "border-amber-500/30",
+            };
+        case "rejected":
+            return {
+                label: "Action Required",
+                badgeClass: "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300",
+                iconBgClass: "bg-rose-500/15 text-rose-700 dark:text-rose-300",
+                cardBorderClass: "border-rose-500/35",
+            };
+        default:
+            return {
+                label: slot.required === false ? "Optional" : "Missing",
+                badgeClass:
+                    slot.required === false
+                        ? "border-border bg-muted/50 text-muted-foreground"
+                        : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+                iconBgClass: slot.required === false ? "bg-muted text-muted-foreground" : "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+                cardBorderClass: "",
+            };
+    }
+}
 
 export default function StudentDocumentsIndex({ user, student, documents, summary }: StudentDocumentsPageProps) {
     const { props } = usePage<{ flash?: { success?: string; error?: string }; success?: string; error?: string }>();
@@ -55,7 +125,8 @@ export default function StudentDocumentsIndex({ user, student, documents, summar
     const [uploadingKey, setUploadingKey] = useState<string | null>(null);
     const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
-    const completionPercent = summary.total > 0 ? Math.round((summary.uploaded / summary.total) * 100) : 0;
+    const compliantCount = summary.compliant ?? summary.uploaded;
+    const completionPercent = summary.total > 0 ? Math.min(100, Math.round((compliantCount / summary.total) * 100)) : 0;
     const flashSuccess = props.flash?.success ?? props.success;
     const flashError = props.flash?.error ?? props.error;
 
@@ -123,11 +194,27 @@ export default function StudentDocumentsIndex({ user, student, documents, summar
                                     Registrar Document Vault
                                 </Badge>
                                 <Badge
-                                    variant={summary.uploaded >= summary.total ? "default" : "outline"}
+                                    variant={compliantCount >= summary.total && summary.total > 0 ? "default" : "outline"}
                                     className="rounded-full font-mono text-xs tabular-nums"
                                 >
-                                    {summary.uploaded} / {summary.total} on file
+                                    {compliantCount} / {summary.total} compliant
                                 </Badge>
+                                {(summary.pending_review ?? 0) > 0 && (
+                                    <Badge
+                                        variant="outline"
+                                        className="rounded-full border-amber-500/40 bg-amber-500/10 font-mono text-xs text-amber-700 tabular-nums dark:text-amber-300"
+                                    >
+                                        {summary.pending_review} pending review
+                                    </Badge>
+                                )}
+                                {(summary.rejected ?? 0) > 0 && (
+                                    <Badge
+                                        variant="outline"
+                                        className="rounded-full border-rose-500/40 bg-rose-500/10 font-mono text-xs text-rose-700 tabular-nums dark:text-rose-300"
+                                    >
+                                        {summary.rejected} action required
+                                    </Badge>
+                                )}
                             </div>
                             <h1 className="text-foreground text-2xl font-bold tracking-tight">My Registrar Documents</h1>
                             <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed">
@@ -195,7 +282,9 @@ export default function StudentDocumentsIndex({ user, student, documents, summar
                 ) : (
                     <div className="grid gap-4 md:grid-cols-2">
                         {documents.map((slot) => {
-                            const isOnFile = slot.status === "on_file";
+                            const hasFile = slot.has_file ?? Boolean(slot.download_url);
+                            const isCompliant = slot.is_compliant ?? ["verified", "physical_on_file", "waived", "on_file"].includes(slot.status);
+                            const ui = statusPresentation(slot);
                             const selectedFile = selectedFiles[slot.key] ?? null;
                             const isUploading = uploadingKey === slot.key;
 
@@ -204,7 +293,7 @@ export default function StudentDocumentsIndex({ user, student, documents, summar
                                     key={slot.key}
                                     className={cn(
                                         "flex flex-col justify-between border-border/70 bg-card/85 shadow-2xs transition-colors",
-                                        isOnFile && "border-emerald-500/25",
+                                        ui.cardBorderClass,
                                     )}
                                 >
                                     <CardHeader className="space-y-2 pb-3">
@@ -213,34 +302,67 @@ export default function StudentDocumentsIndex({ user, student, documents, summar
                                                 <div
                                                     className={cn(
                                                         "flex size-9 shrink-0 items-center justify-center rounded-xl",
-                                                        isOnFile
-                                                            ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                                                            : "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+                                                        ui.iconBgClass,
                                                     )}
                                                 >
-                                                    <FileText className="size-4" />
+                                                    {slot.status === "physical_on_file" ? (
+                                                        <FolderCheck className="size-4" />
+                                                    ) : slot.status === "rejected" ? (
+                                                        <XCircle className="size-4" />
+                                                    ) : slot.status === "pending_review" ? (
+                                                        <Clock3 className="size-4" />
+                                                    ) : (
+                                                        <FileText className="size-4" />
+                                                    )}
                                                 </div>
                                                 <div>
-                                                    <CardTitle className="text-base leading-tight">{slot.label}</CardTitle>
+                                                    <CardTitle className="text-base leading-tight">
+                                                        {slot.label}
+                                                        {slot.required === false && (
+                                                            <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">(Optional)</span>
+                                                        )}
+                                                    </CardTitle>
                                                     <CardDescription className="mt-0.5 text-xs">{slot.description}</CardDescription>
                                                 </div>
                                             </div>
                                             <Badge
-                                                variant={isOnFile ? "secondary" : "outline"}
-                                                className={cn(
-                                                    "shrink-0 rounded-full text-[11px] font-semibold",
-                                                    isOnFile
-                                                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                                                        : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-                                                )}
+                                                variant={isCompliant ? "secondary" : "outline"}
+                                                className={cn("shrink-0 rounded-full text-[11px] font-semibold", ui.badgeClass)}
                                             >
-                                                {isOnFile ? "On File" : "Missing"}
+                                                {ui.label}
                                             </Badge>
                                         </div>
                                     </CardHeader>
 
                                     <CardContent className="space-y-4">
-                                        {isOnFile && slot.download_url && (
+                                        {slot.status === "rejected" && slot.rejection_reason && (
+                                            <div className="flex items-start gap-2 rounded-xl border border-rose-500/35 bg-rose-500/10 px-3 py-2.5 text-xs text-rose-800 dark:text-rose-200">
+                                                <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
+                                                <div>
+                                                    <p className="font-semibold">Registrar feedback</p>
+                                                    <p className="mt-0.5 leading-relaxed">{slot.rejection_reason}</p>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {slot.status === "waived" && slot.waiver_reason && (
+                                            <div className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs text-sky-800 dark:text-sky-200">
+                                                <span className="font-semibold">Waiver note:</span> {slot.waiver_reason}
+                                            </div>
+                                        )}
+
+                                        {slot.status === "physical_on_file" && !hasFile && (
+                                            <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-800 dark:text-emerald-200">
+                                                The registrar has confirmed your physical hard copy is on file. You may optionally upload a digital copy
+                                                for your own records.
+                                            </div>
+                                        )}
+
+                                        {slot.verified_at_label && isCompliant && (
+                                            <p className="text-[11px] text-muted-foreground">Reviewed on {slot.verified_at_label}</p>
+                                        )}
+
+                                        {hasFile && slot.download_url && (
                                             <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/70 bg-background/70 px-3 py-2.5">
                                                 <div className="min-w-0 flex-1">
                                                     <p className="text-[11px] font-medium text-muted-foreground">Current file on record</p>
@@ -278,7 +400,11 @@ export default function StudentDocumentsIndex({ user, student, documents, summar
                                         <div className="space-y-2.5 rounded-xl border border-dashed border-border/80 bg-muted/20 p-3.5">
                                             <div className="space-y-1">
                                                 <label htmlFor={`doc-upload-${slot.key}`} className="text-xs font-semibold text-foreground">
-                                                    {isOnFile ? "Replace document" : "Upload document"}
+                                                    {slot.status === "rejected"
+                                                        ? "Re-upload corrected document"
+                                                        : hasFile
+                                                          ? "Replace document"
+                                                          : "Upload document"}
                                                 </label>
                                                 <p className="text-[11px] text-muted-foreground">{slot.accepted}</p>
                                             </div>
@@ -310,7 +436,7 @@ export default function StudentDocumentsIndex({ user, student, documents, summar
                                                     ) : (
                                                         <>
                                                             <Upload className="size-3.5" />
-                                                            {isOnFile ? "Replace" : "Upload"}
+                                                            {slot.status === "rejected" ? "Re-upload" : hasFile ? "Replace" : "Upload"}
                                                         </>
                                                     )}
                                                 </Button>

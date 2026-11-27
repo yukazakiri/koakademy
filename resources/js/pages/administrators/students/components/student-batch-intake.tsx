@@ -1,0 +1,496 @@
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
+import { Link, router } from "@inertiajs/react";
+import axios from "axios";
+import {
+    AlertTriangle,
+    CheckCircle2,
+    Download,
+    FileSpreadsheet,
+    Loader2,
+    Sparkles,
+    UploadCloud,
+    XCircle,
+} from "lucide-react";
+import { useRef, useState } from "react";
+import { toast } from "sonner";
+import type { IdentifierPolicy, SchoolProfile, StudentConfiguration } from "../shared-types";
+
+interface ValidatedBatchRow {
+    row_number: number;
+    valid: boolean;
+    errors: string[];
+    warnings: string[];
+    normalized: {
+        student_type: string;
+        student_id: string | null;
+        lrn: string | null;
+        first_name: string;
+        middle_name: string | null;
+        last_name: string;
+        gender: string;
+        birth_date: string | null;
+        email: string | null;
+        phone: string | null;
+        course_id: number | null;
+        shs_strand_id: number | null;
+        program_label: string;
+        academic_year: number;
+        status: string;
+    };
+}
+
+interface StudentBatchIntakeProps {
+    configuration: StudentConfiguration;
+    identifierPolicy?: IdentifierPolicy;
+    schoolProfile?: SchoolProfile;
+    sampleProgramCode?: string;
+}
+
+function parseDelimitedText(input: string): Record<string, string>[] {
+    const lines = input
+        .replace(/\r\n/g, "\n")
+        .split("\n")
+        .map((line) => line.replace(/\r$/, ""))
+        .filter((line) => line.trim().length > 0);
+
+    if (lines.length < 2) return [];
+
+    const delimiter = lines[0].includes("\t") ? "\t" : ",";
+    const headers = lines[0]
+        .split(delimiter)
+        .map((h) => h.trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, ""));
+
+    return lines.slice(1).map((line) => {
+        const values = line.split(delimiter).map((v) => v.trim().replace(/^"|"$/g, ""));
+        const row: Record<string, string> = {};
+        headers.forEach((header, idx) => {
+            row[header] = values[idx] ?? "";
+        });
+        return row;
+    });
+}
+
+export function StudentBatchIntake({
+    configuration,
+    identifierPolicy,
+    schoolProfile,
+    sampleProgramCode = "BSCS",
+}: StudentBatchIntakeProps) {
+    const [rawText, setRawText] = useState("");
+    const [validating, setValidating] = useState(false);
+    const [committing, setCommitting] = useState(false);
+    const [skipDuplicates, setSkipDuplicates] = useState(true);
+    const [provisionPortals, setProvisionPortals] = useState(false);
+    const [preview, setPreview] = useState<{
+        summary: { total: number; valid: number; errors: number; duplicates: number };
+        rows: ValidatedBatchRow[];
+    } | null>(null);
+    const [commitResult, setCommitResult] = useState<{
+        created_count: number;
+        failed_count: number;
+        created: Array<{ id: number; student_id: string; full_name: string }>;
+        failed: Array<{ row_number: number; name: string; error: string }>;
+    } | null>(null);
+
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+    const defaultType = configuration.default_type || "college";
+    const defaultLevel = configuration.year_levels?.[defaultType]?.[0]?.value ?? (defaultType === "shs" ? 11 : 1);
+    const externalEnabled =
+        configuration.external_identifier.enabled &&
+        configuration.external_identifier.student_types.includes(defaultType);
+    const manualIdMode = identifierPolicy?.assignment_mode === "manual";
+
+    const buildTemplateCsv = () => {
+        const headers = [
+            "first_name",
+            "middle_name",
+            "last_name",
+            "gender",
+            "birth_date",
+            "email",
+            "phone",
+            "program",
+            "year_level",
+            "status",
+            "student_type",
+        ];
+        if (externalEnabled) headers.push("lrn");
+        if (manualIdMode) headers.push("student_id");
+
+        const row1 = [
+            "Ana",
+            "M.",
+            "Dela Cruz",
+            "female",
+            "2006-04-15",
+            "ana.delacruz@example.edu",
+            "09171234567",
+            sampleProgramCode,
+            String(defaultLevel),
+            "enrolled",
+            defaultType,
+        ];
+        const row2 = [
+            "Marco",
+            "R.",
+            "Santos",
+            "male",
+            "2005-09-21",
+            "marco.santos@example.edu",
+            "09189876543",
+            sampleProgramCode,
+            String(defaultLevel),
+            "applicant",
+            defaultType,
+        ];
+
+        if (externalEnabled) {
+            row1.push("109876543210");
+            row2.push("109876543211");
+        }
+        if (manualIdMode) {
+            row1.push("260001");
+            row2.push("260002");
+        }
+
+        return [headers.join(","), row1.join(","), row2.join(",")].join("\n");
+    };
+
+    const handleDownloadTemplate = () => {
+        const csv = buildTemplateCsv();
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `student-batch-template-${defaultType}.csv`;
+        link.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const handleValidate = async (sourceText?: string) => {
+        const text = sourceText ?? rawText;
+        const parsed = parseDelimitedText(text);
+        if (parsed.length === 0) {
+            toast.error("Paste or upload at least a header row plus one student row.");
+            return;
+        }
+
+        setValidating(true);
+        setCommitResult(null);
+        try {
+            const response = await axios.post(
+                "/administrators/students/batch-import/validate",
+                { rows: parsed },
+                { headers: { Accept: "application/json" } },
+            );
+            setPreview(response.data);
+            toast.success(
+                `Validated ${response.data.summary.total} row(s): ${response.data.summary.valid} ready, ${response.data.summary.errors} with errors.`,
+            );
+        } catch (error: unknown) {
+            const err = error as { response?: { data?: { message?: string } } };
+            toast.error(err.response?.data?.message || "Failed to validate batch rows.");
+        } finally {
+            setValidating(false);
+        }
+    };
+
+    const handleFileUpload = async (file: File) => {
+        const content = await file.text();
+        setRawText(content);
+        await handleValidate(content);
+    };
+
+    const rowsToCommit = (preview?.rows ?? []).filter(
+        (r) => r.valid && (!skipDuplicates || r.warnings.length === 0),
+    );
+
+    const handleCommit = async () => {
+        if (rowsToCommit.length === 0 || committing) return;
+        setCommitting(true);
+        try {
+            const response = await axios.post(
+                "/administrators/students/batch-import/commit",
+                {
+                    rows: rowsToCommit.map((r) => r.normalized),
+                    provision_portal_accounts: provisionPortals,
+                },
+                { headers: { Accept: "application/json" } },
+            );
+            setCommitResult(response.data);
+            toast.success(response.data?.message || "Batch import complete.");
+        } catch (error: unknown) {
+            const err = error as { response?: { data?: { message?: string } } };
+            toast.error(err.response?.data?.message || "Failed to commit batch import.");
+        } finally {
+            setCommitting(false);
+        }
+    };
+
+    return (
+        <div className="space-y-5">
+            <Card className="border-border/70">
+                <CardHeader className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+                    <div>
+                        <CardTitle className="flex items-center gap-2 text-base">
+                            <FileSpreadsheet className="text-primary size-4" />
+                            Spreadsheet Batch Intake
+                        </CardTitle>
+                        <CardDescription className="text-xs">
+                            Paste rows directly from Excel / Google Sheets or upload a CSV file. Every row is validated live against your{" "}
+                            <span className="font-medium">{schoolProfile?.school_level_label || "school"}</span> configuration before saving.
+                        </CardDescription>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 gap-1.5 text-xs"
+                            onClick={() => setRawText(buildTemplateCsv())}
+                        >
+                            <Sparkles className="size-3.5" />
+                            Load Sample
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 gap-1.5 text-xs"
+                            onClick={handleDownloadTemplate}
+                        >
+                            <Download className="size-3.5" />
+                            Download CSV Template
+                        </Button>
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept=".csv,.tsv,.txt"
+                            className="hidden"
+                            onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) void handleFileUpload(file);
+                                e.currentTarget.value = "";
+                            }}
+                        />
+                        <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            className="h-8 gap-1.5 text-xs"
+                            onClick={() => fileInputRef.current?.click()}
+                        >
+                            <UploadCloud className="size-3.5" />
+                            Upload CSV
+                        </Button>
+                    </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                    <div className="space-y-1.5">
+                        <Label htmlFor="batch-csv-input" className="text-xs">
+                            Paste spreadsheet cells (CSV or Tab-separated)
+                        </Label>
+                        <Textarea
+                            id="batch-csv-input"
+                            value={rawText}
+                            onChange={(e) => setRawText(e.target.value)}
+                            placeholder="first_name,middle_name,last_name,gender,birth_date,email,phone,program,year_level,status"
+                            rows={7}
+                            className="font-mono text-xs"
+                        />
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                        <p className="text-muted-foreground text-[11px]">
+                            Max 250 students per batch. Duplicate checks run automatically against name + birth date, email, and LRN.
+                        </p>
+                        <Button
+                            type="button"
+                            size="sm"
+                            disabled={validating || rawText.trim() === ""}
+                            onClick={() => void handleValidate()}
+                            className="gap-1.5 text-xs"
+                        >
+                            {validating ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
+                            Validate Rows
+                        </Button>
+                    </div>
+                </CardContent>
+            </Card>
+
+            {preview && (
+                <Card className="border-border/70">
+                    <CardHeader className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <CardTitle className="text-sm font-semibold">Validation Preview</CardTitle>
+                            <Badge variant="secondary" className="font-mono text-xs tabular-nums">
+                                {preview.summary.total} Total
+                            </Badge>
+                            <Badge
+                                variant="outline"
+                                className="border-emerald-500/35 bg-emerald-500/10 font-mono text-xs text-emerald-700 tabular-nums dark:text-emerald-300"
+                            >
+                                {preview.summary.valid} Valid
+                            </Badge>
+                            {preview.summary.errors > 0 && (
+                                <Badge
+                                    variant="outline"
+                                    className="border-rose-500/35 bg-rose-500/10 font-mono text-xs text-rose-700 tabular-nums dark:text-rose-300"
+                                >
+                                    {preview.summary.errors} Errors
+                                </Badge>
+                            )}
+                            {preview.summary.duplicates > 0 && (
+                                <Badge
+                                    variant="outline"
+                                    className="border-amber-500/35 bg-amber-500/10 font-mono text-xs text-amber-700 tabular-nums dark:text-amber-300"
+                                >
+                                    {preview.summary.duplicates} Possible Duplicates
+                                </Badge>
+                            )}
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-3">
+                            <label className="flex items-center gap-1.5 text-xs">
+                                <Checkbox
+                                    checked={skipDuplicates}
+                                    onCheckedChange={(checked) => setSkipDuplicates(Boolean(checked))}
+                                />
+                                <span>Skip potential duplicates</span>
+                            </label>
+                            <label className="flex items-center gap-1.5 text-xs">
+                                <Checkbox
+                                    checked={provisionPortals}
+                                    onCheckedChange={(checked) => setProvisionPortals(Boolean(checked))}
+                                />
+                                <span>Provision portal accounts</span>
+                            </label>
+                            <Button
+                                type="button"
+                                size="sm"
+                                disabled={committing || rowsToCommit.length === 0}
+                                onClick={() => void handleCommit()}
+                                className="gap-1.5 text-xs"
+                            >
+                                {committing ? <Loader2 className="size-3.5 animate-spin" /> : <UploadCloud className="size-3.5" />}
+                                Import {rowsToCommit.length} Student{rowsToCommit.length === 1 ? "" : "s"}
+                            </Button>
+                        </div>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                        <div className="overflow-x-auto">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow className="bg-muted/40">
+                                        <TableHead className="w-12 text-xs">#</TableHead>
+                                        <TableHead className="text-xs">Student</TableHead>
+                                        <TableHead className="text-xs">Program &amp; Level</TableHead>
+                                        <TableHead className="text-xs">Contact</TableHead>
+                                        <TableHead className="text-xs">Validation Status</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {preview.rows.map((row) => (
+                                        <TableRow key={row.row_number}>
+                                            <TableCell className="font-mono text-xs">{row.row_number}</TableCell>
+                                            <TableCell className="text-xs">
+                                                <p className="font-medium">
+                                                    {row.normalized.first_name} {row.normalized.last_name}
+                                                </p>
+                                                <p className="text-muted-foreground text-[11px]">
+                                                    {row.normalized.gender} · {row.normalized.birth_date || "No DOB"}
+                                                    {row.normalized.lrn ? ` · LRN ${row.normalized.lrn}` : ""}
+                                                </p>
+                                            </TableCell>
+                                            <TableCell className="text-xs">
+                                                <span className="font-medium">{row.normalized.program_label || "Default"}</span> · Level{" "}
+                                                {row.normalized.academic_year}
+                                            </TableCell>
+                                            <TableCell className="text-muted-foreground text-xs">
+                                                {row.normalized.email || row.normalized.phone || "—"}
+                                            </TableCell>
+                                            <TableCell className="text-xs">
+                                                {row.valid ? (
+                                                    <div className="space-y-1">
+                                                        <Badge
+                                                            variant="outline"
+                                                            className="border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 gap-1 text-[10px]"
+                                                        >
+                                                            <CheckCircle2 className="size-3" />
+                                                            Ready
+                                                        </Badge>
+                                                        {row.warnings.map((w, idx) => (
+                                                            <p
+                                                                key={idx}
+                                                                className="flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-300"
+                                                            >
+                                                                <AlertTriangle className="size-3 shrink-0" />
+                                                                {w}
+                                                            </p>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <div className="space-y-1">
+                                                        {row.errors.map((e, idx) => (
+                                                            <p key={idx} className="text-destructive flex items-center gap-1 text-[11px]">
+                                                                <XCircle className="size-3 shrink-0" />
+                                                                {e}
+                                                            </p>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+
+            {commitResult && (
+                <Alert className="border-emerald-500/35 bg-emerald-500/10">
+                    <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" />
+                    <AlertTitle className="text-sm font-semibold">
+                        Batch Import Completed — {commitResult.created_count} Created
+                        {commitResult.failed_count > 0 ? `, ${commitResult.failed_count} Failed` : ""}
+                    </AlertTitle>
+                    <AlertDescription className="mt-2 space-y-2 text-xs">
+                        {commitResult.created.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                                {commitResult.created.slice(0, 12).map((s) => (
+                                    <Link
+                                        key={s.id}
+                                        href={`/administrators/students/${s.id}`}
+                                        className="border-border bg-background hover:border-primary rounded-md border px-2 py-1 font-mono text-[11px]"
+                                    >
+                                        {s.student_id} · {s.full_name}
+                                    </Link>
+                                ))}
+                            </div>
+                        )}
+                        <div className="pt-1">
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-8 text-xs"
+                                onClick={() => router.visit("/administrators/students")}
+                            >
+                                Return to Student Directory
+                            </Button>
+                        </div>
+                    </AlertDescription>
+                </Alert>
+            )}
+        </div>
+    );
+}

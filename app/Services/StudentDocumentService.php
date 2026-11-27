@@ -824,7 +824,7 @@ final class StudentDocumentService
 
         $extension = pathinfo($path, PATHINFO_EXTENSION);
         $studentNumber = preg_replace('/[^A-Za-z0-9_-]/', '', (string) ($student->student_id ?? $student->id)) ?: (string) $student->id;
-        $filename = $record?->file_name ?: ("{$studentNumber}_{$documentType}".($extension !== '' ? ".{$extension}" : ''));
+        $filename = "{$studentNumber}_{$documentType}".($extension !== '' ? ".{$extension}" : '');
 
         return [
             'disk' => $disk,

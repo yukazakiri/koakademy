@@ -16,7 +16,7 @@ return new class extends Migration
 
         Schema::create('student_document_records', function (Blueprint $table): void {
             $table->id();
-            $table->unsignedBigInteger('school_id')->nullable()->index();
+            $table->unsignedBigInteger('school_id')->nullable();
             $table->foreignId('student_id')->constrained('students')->cascadeOnDelete();
             $table->string('document_key', 64);
             $table->string('status', 32)->default('missing')->index();

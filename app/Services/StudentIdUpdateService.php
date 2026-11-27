@@ -95,11 +95,17 @@ final class StudentIdUpdateService
     }
 
     /**
-     * Check if a student ID is available
+     * Check if a student ID is available within the current or specified school.
      */
-    public function isIdAvailable(string|int $studentId): bool
+    public function isIdAvailable(string|int $studentId, ?int $schoolId = null): bool
     {
-        return ! Student::withTrashed()->where('student_id', $studentId)->exists();
+        $resolvedSchoolId = $schoolId ?? app(TenantContext::class)->getCurrentSchoolId();
+
+        return ! Student::withoutSchoolScope()
+            ->withTrashed()
+            ->when($resolvedSchoolId !== null, fn ($query) => $query->where('school_id', $resolvedSchoolId))
+            ->where('student_id', (string) $studentId)
+            ->exists();
     }
 
     /**

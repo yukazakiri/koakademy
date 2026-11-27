@@ -69,6 +69,100 @@ final class StudentConfigurationService
         return app(TenantContext::class)->getCurrentSchoolId();
     }
 
+    /**
+     * Resolve school-level operational profile used to adapt Student & Document workflows.
+     *
+     * @return array<string, mixed>
+     */
+    public function schoolProfile(?int $schoolId = null): array
+    {
+        $resolvedSchoolId = $schoolId ?? $this->schoolId();
+        $config = $this->get($resolvedSchoolId);
+        $school = $resolvedSchoolId !== null
+            ? \App\Models\School::query()->find($resolvedSchoolId)
+            : app(TenantContext::class)->getCurrentSchool();
+
+        $schoolLevel = $school?->school_level;
+        $levelValue = $schoolLevel instanceof \App\Enums\SchoolLevel
+            ? $schoolLevel->value
+            : (is_string($schoolLevel) ? $schoolLevel : 'higher_education');
+
+        $enabledTypes = $config['enabled_types'] ?? ['college'];
+        $isBasicEd = in_array($levelValue, ['elementary', 'junior_high', 'senior_high'], true)
+            || ($enabledTypes === ['shs']);
+        $isTvet = $levelValue === 'technical_vocational' || ($enabledTypes === ['tesda']);
+        $isHigherEd = ! $isBasicEd && ! $isTvet;
+        $isMultiDepartment = count($enabledTypes) > 1;
+
+        $guardianRequiredTypes = $isBasicEd
+            ? $enabledTypes
+            : array_values(array_intersect($enabledTypes, ['shs']));
+
+        $termLabel = match ($levelValue) {
+            'elementary', 'junior_high' => 'Quarter',
+            'technical_vocational' => 'Batch / Term',
+            default => 'Semester',
+        };
+
+        $placementLabel = match (true) {
+            $isBasicEd => 'Grade & Strand',
+            $isTvet => 'Qualification & Level',
+            $isMultiDepartment => 'Program / Strand',
+            default => 'Program & Year',
+        };
+
+        return [
+            'school_id' => $school?->id ?? $resolvedSchoolId,
+            'school_name' => $school?->name,
+            'country_code' => $school?->country_code,
+            'school_level' => $levelValue,
+            'school_level_label' => $schoolLevel instanceof \App\Enums\SchoolLevel ? $schoolLevel->getLabel() : 'College / University',
+            'preset' => $config['preset'] ?? 'neutral',
+            'philippine_reporting' => (bool) ($config['philippine_reporting'] ?? false),
+            'is_basic_ed' => $isBasicEd,
+            'is_tvet' => $isTvet,
+            'is_higher_ed' => $isHigherEd,
+            'is_multi_department' => $isMultiDepartment,
+            'guardian_required_types' => $guardianRequiredTypes,
+            'term_label' => $termLabel,
+            'placement_label' => $placementLabel,
+        ];
+    }
+
+    /**
+     * Collect all valid year-level options configured across enabled student types for directory filters.
+     *
+     * @return list<array{value: string, label: string, numeric: int}>
+     */
+    public function filterYearLevels(?int $schoolId = null, ?string $studentType = null): array
+    {
+        $config = $this->get($schoolId);
+        $types = filled($studentType)
+            ? [$studentType]
+            : ($config['enabled_types'] ?? ['college']);
+
+        $byValue = [];
+        foreach ($types as $type) {
+            foreach ($config['year_levels'][$type] ?? [] as $item) {
+                $val = (int) ($item['value'] ?? 0);
+                if ($val <= 0) {
+                    continue;
+                }
+                if (! isset($byValue[$val])) {
+                    $byValue[$val] = [
+                        'value' => (string) $val,
+                        'label' => (string) ($item['label'] ?? "Year {$val}"),
+                        'numeric' => $val,
+                    ];
+                }
+            }
+        }
+
+        ksort($byValue);
+
+        return array_values($byValue);
+    }
+
     /** Public registration can choose a school only when it is unambiguous. */
     public function resolvePublicSchool(?int $courseId = null): void
     {

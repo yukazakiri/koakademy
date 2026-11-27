@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Requests\Administrators;
 
 use App\Enums\StudentStatus;
+use App\Enums\UserRole;
+use App\Support\AdministratorPermissionChecker;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rules\Enum;
 
@@ -12,13 +14,17 @@ final class BulkUpdateStudentStatusRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        return AdministratorPermissionChecker::userHasAnyPermission(
+            $this->user(),
+            'Update:Student',
+            [UserRole::Admin, UserRole::Registrar, UserRole::AssistantRegistrar],
+        );
     }
 
     public function rules(): array
     {
         return [
-            'student_ids' => ['required', 'array', 'min:1'],
+            'student_ids' => ['required', 'array', 'min:1', 'max:500'],
             'student_ids.*' => ['required', 'integer', 'distinct', 'exists:students,id'],
             'status' => ['required', new Enum(StudentStatus::class)],
         ];

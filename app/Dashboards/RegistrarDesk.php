@@ -119,6 +119,19 @@ final class RegistrarDesk implements Dashboard
                     'icon' => 'users',
                 ],
                 [
+                    'id' => 'documents-review',
+                    'title' => 'Student documents pending review',
+                    'description' => 'Uploaded student documents awaiting registrar verification.',
+                    'count' => \Illuminate\Support\Facades\Schema::hasTable('student_document_records')
+                        ? \App\Models\StudentDocumentRecord::query()
+                            ->where('status', \App\Models\StudentDocumentRecord::StatusPendingReview)
+                            ->count()
+                        : 0,
+                    'severity' => 'warning',
+                    'href' => '/administrators/students/documents?compliance=pending_review',
+                    'icon' => 'file-check',
+                ],
+                [
                     'id' => 'clearance',
                     'title' => 'Grade-release clearances pending',
                     'description' => 'Recorded grade-release clearances not yet cleared for this term.',

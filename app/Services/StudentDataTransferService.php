@@ -6,17 +6,23 @@ namespace App\Services;
 
 use App\Models\ClassAttendanceRecord;
 use App\Models\ClassEnrollment;
+use App\Models\DocumentLocation;
 use App\Models\EnrollmentWorkflowEvent;
+use App\Models\Resource;
 use App\Models\Student;
 use App\Models\StudentClearance;
+use App\Models\StudentDocumentRecord;
 use App\Models\StudentEnrollment;
+use App\Models\StudentHold;
 use App\Models\StudentIdChangeLog;
+use App\Models\StudentStatusRecord;
 use App\Models\StudentTransaction;
 use App\Models\StudentTuition;
 use App\Models\SubjectEnrollment;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
 
 final class StudentDataTransferService
@@ -285,13 +291,92 @@ final class StudentDataTransferService
                     ->update(['student_id' => $target->id]);
             }
 
+            // Documents, Holds, Signature & Status Records (full merges only)
+            $transferredDocuments = 0;
+            $transferredHolds = 0;
+            $transferredStatusRecords = 0;
+
+            if ($scopeEnrollmentId === null) {
+                $source->loadMissing('DocumentLocation');
+                $target->loadMissing('DocumentLocation');
+
+                if ($source->DocumentLocation) {
+                    $targetDocLocation = $target->DocumentLocation ?? DocumentLocation::create([]);
+                    if (! $target->document_location_id) {
+                        $target->forceFill(['document_location_id' => $targetDocLocation->id])->save();
+                    }
+
+                    $docUpdates = [];
+                    foreach (DocumentLocation::DOCUMENT_FIELDS as $field) {
+                        $sourceVal = $source->DocumentLocation->getAttribute($field);
+                        $targetVal = $targetDocLocation->getAttribute($field);
+                        if (is_string($sourceVal) && mb_trim($sourceVal) !== '' && (! is_string($targetVal) || mb_trim($targetVal) === '')) {
+                            $docUpdates[$field] = $sourceVal;
+                            $transferredDocuments++;
+                        }
+                    }
+                    if ($docUpdates !== []) {
+                        $targetDocLocation->update($docUpdates);
+                    }
+                }
+
+                if (Schema::hasTable('student_document_records')) {
+                    $existingKeys = StudentDocumentRecord::query()
+                        ->where('student_id', $target->id)
+                        ->pluck('document_key')
+                        ->all();
+
+                    $movedRecords = StudentDocumentRecord::query()
+                        ->where('student_id', $source->id)
+                        ->whereNotIn('document_key', $existingKeys)
+                        ->update(['student_id' => $target->id]);
+                    $transferredDocuments += $movedRecords;
+                }
+
+                $transferredDynamic = Resource::query()
+                    ->where('resourceable_type', Student::class)
+                    ->where('resourceable_id', $source->id)
+                    ->update(['resourceable_id' => $target->id]);
+                $transferredDocuments += $transferredDynamic;
+
+                if (filled($source->signature_path) && blank($target->signature_path)) {
+                    $target->forceFill(['signature_path' => $source->signature_path])->save();
+                    $transferredDocuments++;
+                }
+
+                if (Schema::hasTable('student_holds')) {
+                    $transferredHolds = StudentHold::query()
+                        ->where('student_id', $source->id)
+                        ->update(['student_id' => $target->id]);
+                }
+
+                if (Schema::hasTable('student_status_records')) {
+                    $existingPeriods = StudentStatusRecord::query()
+                        ->where('student_id', $target->id)
+                        ->get(['academic_year', 'semester'])
+                        ->map(fn ($r): string => "{$r->academic_year}|{$r->semester}")
+                        ->all();
+
+                    foreach (StudentStatusRecord::query()->where('student_id', $source->id)->get() as $statusRow) {
+                        $periodKey = "{$statusRow->academic_year}|{$statusRow->semester}";
+                        if (! in_array($periodKey, $existingPeriods, true)) {
+                            $statusRow->update(['student_id' => $target->id]);
+                            $transferredStatusRecords++;
+                        }
+                    }
+                }
+            }
+
             $affectedTotal = $updatedEnrollments
                 + $updatedSubjects
                 + $updatedClassEnrollments
                 + $updatedTuitions
                 + $updatedTransactions
                 + $updatedClearances
-                + $updatedAttendances;
+                + $updatedAttendances
+                + $transferredDocuments
+                + $transferredHolds
+                + $transferredStatusRecords;
 
             $changeLog = StudentIdChangeLog::query()->create([
                 'old_student_id' => (string) $source->student_id,

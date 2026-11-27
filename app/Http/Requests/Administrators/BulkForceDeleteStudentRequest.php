@@ -4,19 +4,25 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Administrators;
 
+use App\Enums\UserRole;
+use App\Support\AdministratorPermissionChecker;
 use Illuminate\Foundation\Http\FormRequest;
 
 final class BulkForceDeleteStudentRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        return AdministratorPermissionChecker::userHasAnyPermission(
+            $this->user(),
+            ['ForceDelete:Student', 'ForceDeleteAny:Student'],
+            [UserRole::Admin],
+        );
     }
 
     public function rules(): array
     {
         return [
-            'student_ids' => ['required', 'array', 'min:1'],
+            'student_ids' => ['required', 'array', 'min:1', 'max:500'],
             'student_ids.*' => ['required', 'integer', 'distinct', 'exists:students,id'],
             'confirm_text' => ['required', 'string'],
         ];

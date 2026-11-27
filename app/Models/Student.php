@@ -223,6 +223,11 @@ final class Student extends Model implements RecordsActivity
     #[Override]
     protected $table = 'students';
 
+    #[Override]
+    protected $hidden = [
+        'signature_path',
+    ];
+
     protected $versionStrategy = VersionStrategy::SNAPSHOT;
 
     #[Override]
@@ -1419,6 +1424,18 @@ final class Student extends Model implements RecordsActivity
         return $this->employed_by_institution === true;
     }
 
+    /** @return HasMany<StudentHold, $this> */
+    public function holds(): HasMany
+    {
+        return $this->hasMany(StudentHold::class, 'student_id');
+    }
+
+    /** @return HasMany<StudentDocumentRecord, $this> */
+    public function documentRecords(): HasMany
+    {
+        return $this->hasMany(StudentDocumentRecord::class, 'student_id');
+    }
+
     protected static function boot(): void
     {
         parent::boot();
@@ -1458,29 +1475,27 @@ final class Student extends Model implements RecordsActivity
         });
 
         self::saving(function (Student $student): void {
-            if ($student->studentContactsInfo) {
+            if ($student->relationLoaded('studentContactsInfo') && $student->studentContactsInfo !== null && ($student->studentContactsInfo->isDirty() || ! $student->studentContactsInfo->exists)) {
                 $student->studentContactsInfo->save();
-                $student->student_contact_id =
-                    $student->studentContactsInfo->id;
+                $student->student_contact_id = $student->studentContactsInfo->id;
             }
 
-            if ($student->studentParentInfo) {
+            if ($student->relationLoaded('studentParentInfo') && $student->studentParentInfo !== null && ($student->studentParentInfo->isDirty() || ! $student->studentParentInfo->exists)) {
                 $student->studentParentInfo->save();
                 $student->student_parent_info = $student->studentParentInfo->id;
             }
 
-            if ($student->studentEducationInfo) {
+            if ($student->relationLoaded('studentEducationInfo') && $student->studentEducationInfo !== null && ($student->studentEducationInfo->isDirty() || ! $student->studentEducationInfo->exists)) {
                 $student->studentEducationInfo->save();
-                $student->student_education_id =
-                    $student->studentEducationInfo->id;
+                $student->student_education_id = $student->studentEducationInfo->id;
             }
 
-            if ($student->personalInfo) {
+            if ($student->relationLoaded('personalInfo') && $student->personalInfo !== null && ($student->personalInfo->isDirty() || ! $student->personalInfo->exists)) {
                 $student->personalInfo->save();
                 $student->student_personal_id = $student->personalInfo->id;
             }
 
-            if ($student->DocumentLocation) {
+            if ($student->relationLoaded('DocumentLocation') && $student->DocumentLocation !== null && ($student->DocumentLocation->isDirty() || ! $student->DocumentLocation->exists)) {
                 $student->DocumentLocation->save();
                 $student->document_location_id = $student->DocumentLocation->id;
             }
@@ -1497,7 +1512,16 @@ final class Student extends Model implements RecordsActivity
             $student->StudentContactsInfo()->delete();
             $student->personalInfo()->delete();
             $student->subjectEnrolled()->delete();
-            // $student->DocumentLocation()->delete();
+            if ($student->document_location_id) {
+                $student->DocumentLocation()->delete();
+            }
+            if (Schema::hasTable('student_document_records')) {
+                $student->documentRecords()->delete();
+            }
+            if (Schema::hasTable('student_holds')) {
+                $student->holds()->delete();
+            }
+            $student->resources()->delete();
             $student->account()->delete();
             $student->classEnrollments()->delete();
             $student->statusRecords()->delete();
@@ -1515,8 +1539,21 @@ final class Student extends Model implements RecordsActivity
     {
         return Attribute::make(get: function (): string {
             $documentLocation = $this->DocumentLocation;
+            $raw = $documentLocation?->picture_1x1;
 
-            return $documentLocation?->resolveDocumentUrl($documentLocation->picture_1x1) ?? '';
+            if (! is_string($raw) || mb_trim($raw) === '') {
+                return '';
+            }
+
+            if (filter_var($raw, FILTER_VALIDATE_URL) || str_starts_with($raw, '/')) {
+                return $raw;
+            }
+
+            return route('administrators.students.documents.fixed.show', [
+                'student' => $this->id,
+                'documentType' => 'picture_1x1',
+                'preview' => 1,
+            ]);
         });
     }
 
@@ -1563,8 +1600,21 @@ final class Student extends Model implements RecordsActivity
     {
         return Attribute::make(get: function (): string {
             $documentLocation = $this->DocumentLocation;
+            $raw = $documentLocation?->picture_1x1;
 
-            return $documentLocation?->resolveDocumentUrl($documentLocation->picture_1x1) ?? '';
+            if (! is_string($raw) || mb_trim($raw) === '') {
+                return '';
+            }
+
+            if (filter_var($raw, FILTER_VALIDATE_URL) || str_starts_with($raw, '/')) {
+                return $raw;
+            }
+
+            return route('administrators.students.documents.fixed.show', [
+                'student' => $this->id,
+                'documentType' => 'picture_1x1',
+                'preview' => 1,
+            ]);
         });
     }
 
